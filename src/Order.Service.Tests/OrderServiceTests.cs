@@ -2,6 +2,7 @@
 using NUnit.Framework;
 using Order.Data;
 using Order.Data.Entities;
+using Order.Model;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -12,9 +13,14 @@ namespace Order.Service.Tests
     {
         private IOrderService _orderService;
         private IOrderRepository _orderRepository;
+        private IOrderStatusRepository _orderStatusRepository;
+        private IOrderProductRepository _orderProductRepository;
         private OrderContext _orderContext;
 
+
         private readonly byte[] _orderStatusCreatedId = Guid.NewGuid().ToByteArray();
+        private readonly byte[] _orderStatusCompletedId = Guid.NewGuid().ToByteArray();
+
         private readonly byte[] _orderServiceEmailId = Guid.NewGuid().ToByteArray();
         private readonly byte[] _orderProductEmailId = Guid.NewGuid().ToByteArray();
 
@@ -29,7 +35,9 @@ namespace Order.Service.Tests
 
             _orderContext = new OrderContext(options);
             _orderRepository = new OrderRepository(_orderContext);
-            _orderService = new OrderService(_orderRepository);
+            _orderStatusRepository = new OrderStatusRepository(_orderContext);
+            _orderProductRepository = new OrderProductRepository(_orderContext);
+            _orderService = new OrderService(_orderRepository, _orderStatusRepository, _orderProductRepository);
 
             await AddReferenceDataAsync(_orderContext);
         }
@@ -128,19 +136,70 @@ namespace Order.Service.Tests
             Assert.AreEqual(1.8m, order.TotalPrice);
         }
 
-        private async Task AddOrder(Guid orderId, int quantity)
+        [Test]
+        public async Task GetOrdersByStatusIdAsync_ReturnsCorrectOrders()
+        {
+            // Arrange
+            var orderId1 = Guid.NewGuid();
+            await AddOrder(orderId1, 1, _orderStatusCreatedId);
+
+            var orderId2 = Guid.NewGuid();
+            await AddOrder(orderId2, 2, _orderStatusCompletedId);
+
+            var orderId3 = Guid.NewGuid();
+            await AddOrder(orderId3, 3, _orderStatusCreatedId);
+
+            var orderStatusIdGuid = new Guid(_orderStatusCreatedId);
+
+            // Act
+            var orders = await _orderService.GetOrdersByStatusIdAsync(orderStatusIdGuid);
+
+            // Assert
+            Assert.AreEqual(2, orders.Count());
+
+            Assert.IsTrue(orders.Any(x => x.Id == orderId1));
+            Assert.IsFalse(orders.Any(x => x.Id == orderId2));
+            Assert.IsTrue(orders.Any(x => x.Id == orderId3));
+        }
+
+        [Test]
+        public async Task GetOrdersByStatusIdAsync_ReturnsCorrectOrders_InvalidStatusId()
+        {
+            // Arrange
+            var orderId1 = Guid.NewGuid();
+            await AddOrder(orderId1, 1, _orderStatusCreatedId);
+
+            var orderId2 = Guid.NewGuid();
+            await AddOrder(orderId2, 2, _orderStatusCompletedId);
+
+            var orderId3 = Guid.NewGuid();
+            await AddOrder(orderId3, 3, _orderStatusCreatedId);
+
+            var orderStatusIdGuid = Guid.NewGuid();
+
+            // Act
+            var orders = await _orderService.GetOrdersByStatusIdAsync(orderStatusIdGuid);
+
+            // Assert
+            Assert.AreEqual(0, orders.Count());
+        }
+
+
+        private async Task AddOrder(Guid orderId, int quantity, byte[] orderStatusIdBytes = null)
         {
             var orderIdBytes = orderId.ToByteArray();
+            var statusIdBytes = orderStatusIdBytes ?? _orderStatusCreatedId;
+
             _orderContext.Order.Add(new Data.Entities.Order
             {
                 Id = orderIdBytes,
                 ResellerId = Guid.NewGuid().ToByteArray(),
                 CustomerId = Guid.NewGuid().ToByteArray(),
                 CreatedDate = DateTime.Now,
-                StatusId = _orderStatusCreatedId,
+                StatusId = statusIdBytes,
             });
 
-            _orderContext.OrderItem.Add(new OrderItem
+            _orderContext.OrderItem.Add(new Data.Entities.OrderItem
             {
                 Id = Guid.NewGuid().ToByteArray(),
                 OrderId = orderIdBytes,
@@ -158,6 +217,11 @@ namespace Order.Service.Tests
             {
                 Id = _orderStatusCreatedId,
                 Name = "Created",
+            });
+            orderContext.OrderStatus.Add(new OrderStatus
+            {
+                Id = _orderStatusCompletedId,
+                Name = "Completed",
             });
 
             orderContext.OrderService.Add(new Data.Entities.OrderService

@@ -17,65 +17,48 @@ namespace Order.Data
             _orderContext = orderContext;
         }
 
-        public async Task<IEnumerable<OrderSummary>> GetOrdersAsync()
+        public async Task<IEnumerable<Entities.Order>> GetOrdersAsync()
         {
-            var orderEntities = await _orderContext.Order
-                .OrderByDescending(x => x.CreatedDate)
-                .ToListAsync();
-
-            var orders = orderEntities.Select(x => new OrderSummary
-            {
-                Id = new Guid(x.Id),
-                ResellerId = new Guid(x.ResellerId),
-                CustomerId = new Guid(x.CustomerId),
-                StatusId = new Guid(x.StatusId),
-                StatusName = x.Status.Name,
-                ItemCount = x.Items.Count,
-                TotalCost = x.Items.Sum(i => i.Quantity * i.Product.UnitCost).Value,
-                TotalPrice = x.Items.Sum(i => i.Quantity * i.Product.UnitPrice).Value,
-                CreatedDate = x.CreatedDate
-            });
-
-            return orders;
+            return await _orderContext.Order
+                .OrderByDescending(x => x.CreatedDate).ToListAsync();
         }
 
-        public async Task<OrderDetail> GetOrderByIdAsync(Guid orderId)
+        public async Task<Entities.Order> GetOrderByIdAsync(Guid orderId)
         {
             var orderIdBytes = orderId.ToByteArray();
 
-            var order = await _orderContext.Order.SingleOrDefaultAsync(x => _orderContext.Database.IsInMemory() ? x.Id.SequenceEqual(orderIdBytes) : x.Id == orderIdBytes );
-            if (order == null)
-            {
-                return null;
-            }
+            return await _orderContext.Order.SingleOrDefaultAsync(x => _orderContext.Database.IsInMemory() ? x.Id.SequenceEqual(orderIdBytes) : x.Id == orderIdBytes );
+        }
 
-            var orderDetail = new OrderDetail
-            {
-                Id = new Guid(order.Id),
-                ResellerId = new Guid(order.ResellerId),
-                CustomerId = new Guid(order.CustomerId),
-                StatusId = new Guid(order.StatusId),
-                StatusName = order.Status.Name,
-                CreatedDate = order.CreatedDate,
-                TotalCost = order.Items.Sum(x => x.Quantity * x.Product.UnitCost).Value,
-                TotalPrice = order.Items.Sum(x => x.Quantity * x.Product.UnitPrice).Value,
-                Items = order.Items.Select(x => new Model.OrderItem
-                {
-                    Id = new Guid(x.Id),
-                    OrderId = new Guid(x.OrderId),
-                    ServiceId = new Guid(x.ServiceId),
-                    ServiceName = x.Service.Name,
-                    ProductId = new Guid(x.ProductId),
-                    ProductName = x.Product.Name,
-                    UnitCost = x.Product.UnitCost,
-                    UnitPrice = x.Product.UnitPrice,
-                    TotalCost = x.Product.UnitCost * x.Quantity.Value,
-                    TotalPrice = x.Product.UnitPrice * x.Quantity.Value,
-                    Quantity = x.Quantity.Value
-                })
-            };
+        public async Task<IEnumerable<Entities.Order>> GetOrdersByStatusIdAsync(Guid statusId)
+        {
+            var statusIdBytes = statusId.ToByteArray();
 
-            return orderDetail;
+            return await _orderContext.Order
+                .Where(x => _orderContext.Database.IsInMemory() ? x.StatusId.SequenceEqual(statusIdBytes) : x.StatusId == statusIdBytes)
+                .OrderByDescending(x => x.CreatedDate).ToListAsync();
+        }
+
+        public async Task UpdateOrder()
+        {
+            await _orderContext.SaveChangesAsync();
+        }
+
+        public async Task AddOrder(Data.Entities.Order order)
+        {
+            _orderContext.Order.Add(order);
+            await _orderContext.SaveChangesAsync();
+        }
+
+        public async Task<IEnumerable<Entities.Order>> GetOrdersByYearStatusIdAsync(int year, byte[] statusId)
+        {
+            var startDate = new DateTime(year, 1, 1);
+            var endDate = startDate.AddYears(1);
+
+            return await _orderContext.Order
+                .Where(x => _orderContext.Database.IsInMemory() ? x.StatusId.SequenceEqual(statusId) : x.StatusId == statusId
+                        && x.CreatedDate >= startDate && x.CreatedDate < endDate)
+                .OrderByDescending(x => x.CreatedDate).ToListAsync();
         }
     }
 }
